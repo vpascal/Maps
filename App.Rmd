@@ -1,0 +1,284 @@
+---
+title: "Patton College Students: Demographic and Socio-Economic Portrait"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: flatly
+    social: ['facebook','twitter','linkedin']
+    storyboard: true
+    css: w3.css
+runtime: shiny    
+---
+
+<script>
+
+$(document).ready(function(){
+    $("table").addClass("w3-table-all w3-hoverable");
+});
+</script>
+
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(dplyr)
+library(readxl)
+library(leaflet)
+library(htmltools)
+library(plotly)
+library(maps)
+library(readxl)
+library(ggplot2)
+
+```
+
+
+```{r global, include=FALSE}
+
+
+students <- read_excel("geocoded_cleaned_final.xlsx")
+
+
+```
+
+### This map shows geographic distribution of Patton Colleges Students. The clusters represent number of students in the region.
+
+```{r}
+
+react_standing <- reactive({
+  
+if(input$standing =='All'){
+  
+  "Standing %in% c('Graduate','Senior', 'Freshman', 'Junior', 'Sophomore')"
+  
+} else if (input$standing =='Undergraduate') {
+  
+  "Standing %in% c('Senior', 'Freshman', 'Junior', 'Sophomore')"
+  
+} else{
+  
+  paste0("Standing == ",paste0("'",input$standing,"'"))
+  
+}
+
+})
+
+
+react_department <- reactive({
+
+  if(input$department =="All"){
+
+   "Dept.School %in% c('Educational Studies','Counseling & Higher Education', 'Teacher Education', 'Recreation and Sport Pedagogy', 'Human & Consumer Sciences','Education')"
+
+  } else {
+
+    paste0("Dept.School ==",paste0("'",input$department,"'"))
+  }
+
+})
+
+
+temp <- reactive({
+  filter_(students,react_standing(),react_department())
+
+})
+
+
+mypopup <- function(field1, field2, field3, field4){
+  title <- '<b> STATS: </b>'
+  
+  income <- paste0('<tr> <td>',"Household Income:",'</td> <td>',paste0("$",as.character(prettyNum(field1,big.mark = ","))),'</td></tr>')
+  college <- paste0('<tr> <td>',"College Degree: ", '</td> <td>',as.character(field2),"%",'</td></tr>')
+  highschool <- paste0('<tr> <td>',"High School Degree: ",'</td> <td>' ,as.character(field3),"%",'</td>','</td></tr>')
+  unemployment <- paste0('<tr> <td>',"Unemployment Rate: ", '</td> <td>', as.character(field4),"%",'</td>', '</td></tr>')
+  paste0(title,"<table class='w3-table-all w3-hoverable'>", income, college,highschool,unemployment, '</table>')
+}
+
+
+
+human <- makeIcon(iconUrl ="student.png", iconRetinaUrl = "student.png",24,24)
+
+
+renderLeaflet({
+
+leaflet(temp()) %>%
+  addTiles() %>%
+  addProviderTiles("CartoDB.Positron", group="Default") %>% 
+  addProviderTiles("Esri.WorldGrayCanvas", group="Esri") %>% 
+  addMarkers(~lon ,~lat, clusterOptions = markerClusterOptions(),icon = human, popup = ~mypopup(Income, `College Degree Rate`, `High School Diploma Rate`, Unempl_rate)) %>% 
+  addLayersControl(baseGroups=c("Default","Esri"),
+  options = layersControlOptions(collapsed = FALSE)) 
+  
+  })
+
+
+```
+
+***
+
+```{r}
+
+selectInput("standing", label = "Standing:",
+            choices = c("All","Undergraduate",unique(students$Standing)),selected = "All")
+
+selectInput("department", label = "Department:",
+            choices = c("All",unique(students$Dept.School)), selected = "All")
+
+HTML("<p>Zoom in and click on the figure to get detailed information.</p>")
+
+
+```
+
+
+
+### This map is a snapshot of Patton College students. It shows geographic distribution and racial diversity of our students.
+
+```{r}
+
+pal <- colorFactor(c("red","red","green","black","magenta", "slateblue1"), domain = c( "Asian", "Black","HispLat"," Indian","Two or more","White"))
+
+students <- students %>% filter(!is.na(Ethnicity))
+
+temp1 <- reactive({
+  
+  
+  if (input$race =="All"){
+    
+    students
+    
+  } else {
+    
+    students %>% filter(Ethnicity == input$race)
+  }
+  
+  
+})
+
+
+renderLeaflet({
+
+leaflet(temp1()) %>%
+  addTiles() %>%
+  addProviderTiles("CartoDB.Positron", group="Default") %>% 
+  addProviderTiles("Esri.WorldGrayCanvas", group="Esri") %>% 
+  addCircleMarkers(~lon ,~lat, radius = 4, color = ~pal(Ethnicity),stroke = FALSE, fillOpacity = 0.7,popup = ~mypopup(Income, `College Degree Rate`, `High School Diploma Rate`, Unempl_rate)) %>% 
+  addLayersControl(baseGroups=c("Default","Esri"),
+  options = layersControlOptions(collapsed = FALSE)) %>% 
+  addLegend(pal = pal, values = ~ Ethnicity, opacity = 0.7)
+  
+})
+
+```
+
+***
+
+
+```{r}
+
+
+
+selectInput("race", label = "Race:",choices = c("All","Asian","Black","Indian","HispLat","Two or more","White"), selected = "All")
+
+
+```
+
+```{r}
+
+knitr::kable(students %>% group_by(Ethnicity) %>% summarise(N=n()) %>%  mutate(Percent=round(N/sum(N)*100,1)) %>% rename(Race=Ethnicity))
+
+```
+
+### This map shows international students at Patton College both graduate and undergraduate.
+
+```{r}
+
+international <- read_excel("International Students.xlsx")
+student <-international %>% select(Country, N) %>% filter(Country !="United States of America")
+
+mapStates = map("world", student$Country, fill = TRUE, plot = FALSE)
+
+renderLeaflet({
+leaflet(mapStates) %>% addTiles() %>%
+setView(lng =15 ,lat =15 , zoom = 2) %>%     
+addProviderTiles("Esri.WorldGrayCanvas") %>%
+addPolygons(stroke = F,smoothFactor = 0.2, color="red", fillOpacity = 0.3)
+
+})
+
+```
+
+
+***
+
+```{r}
+student <- student %>% arrange(desc(N))
+knitr::kable(student)
+
+```
+
+
+### This chart allows you to explore areas in which Patton College students live.
+
+```{r}
+
+
+mypal <- colorFactor(c("blue","green"), domain = c( "Selected", "Not Selected"))
+
+
+container <- reactive({
+  
+  students[students$Income >= input$income[1] & students$Income <= input$income[2] & 
+             students$`College Degree Rate`>= input$education[1] & students$`College Degree Rate` <= input$education[2],]
+  
+})
+
+
+output$map1 <- renderLeaflet({
+  
+  leaflet(students) %>%
+    addTiles() %>%
+    addProviderTiles("CartoDB.Positron", group="Default") %>% 
+    addProviderTiles("Esri.WorldGrayCanvas", group="Esri") %>% 
+    fitBounds(lng1 = ~min(lon),lat1 =  ~min(lat),lng2 =  ~max(lon),lat2 =  ~max(lat)) %>% 
+    
+    addCircleMarkers(~lon ,~lat, radius = 4,color ="green", stroke = FALSE, fillOpacity = 0.5, popup = ~mypopup(Income, `College Degree Rate`, `High School Diploma Rate`, Unempl_rate)) %>% 
+    #  addCircleMarkers(data = vlad(), lng= ~lon ,lat = ~lat, radius = 4,color ="green", stroke = FALSE, fillOpacity = 0.5, group = "Selected") %>% 
+    
+    addLayersControl(baseGroups=c("Default","Esri"),
+                     #overlayGroups=c("Base","Selected"),                 
+                     options = layersControlOptions(collapsed = FALSE))
+  
+})
+
+
+observe({
+  
+  leafletProxy("map1", data = container()) %>% clearMarkers() %>% 
+
+    addCircleMarkers(lng = ~lon ,lat = ~lat, radius = 4,color = "green", stroke = FALSE, fillOpacity = 0.5,popup = ~mypopup(Income, `College Degree Rate`, `High School Diploma Rate`, Unempl_rate))
+})
+
+leafletOutput("map1")   
+
+```
+
+***
+```{r}
+
+sliderInput(
+  "income",
+  h5("Median Household Income"),
+  value = c(0, max(students$Income)),
+  min = min(students$Income),
+  max = max(students$Income)
+  )
+  
+  sliderInput(
+  "education",
+  h5("Percent College Degree"),
+  value = c(0, max(students$`College Degree Rate`)),
+  min = min(students$`College Degree Rate`),
+  max = max(students$`College Degree Rate`)
+  )
+  
+
+```
+
